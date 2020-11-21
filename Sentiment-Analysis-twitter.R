@@ -3,7 +3,7 @@
 ####### Sentiment analysis of tweets #########
 
 # Work directory
-setwd("D:/FCD/Projetos/Sentiment_analysis")
+setwd("D:/FCD/Projetos/Sentiment_analysis/Sentiment-analysis-of-tweets-using-R")
 
 library(twitteR)
 library(dplyr)
@@ -48,19 +48,6 @@ dim(df)
 
 ## Saving the dataset
 write.csv(df, 'tweets.csv', row.names = FALSE)
-
-## Analysing the collected data
-
-# Number of tweets per user
-df %>% group_by(screenName) %>% 
-  summarise(n = n()) %>% 
-  arrange(desc(n)) %>%
-  head(20) %>%
-  ggplot(aes(x = n, y = reorder(screenName, n))) +
-  geom_bar(stat = 'identity', color = 'orchid4', fill = 'orchid3') +
-  ggtitle('Top 20 users in the dataset') +
-  xlab('Number of tweets') +
-  ylab('')
 
 
 ## Cleaning the text
@@ -142,8 +129,7 @@ substring(corpus[[1]]$content, 1, 95)
 # OR
 as.character(corpus[[1]])
 # print more than 1 line
-text <- lapply(corpus[1:5], as.character)
-text
+lapply(corpus[1:5], as.character)
 
 # As can be seen, the punctuation was removed earlier, but there are some desired modifications to make,
 # as removing the stopwords, removing some metacharacters like \n, stem words. Let's do that using 
@@ -161,9 +147,8 @@ replaceword <- content_transformer(function(x, pattern, replace){
   return(gsub(pattern, replace, x))
 })
 
-corpus <- tm_map(corpus, replaceword, '\\s[s]\\s', '')
-corpus <- tm_map(corpus, replaceword, '\n+', '')
-corpus <- tm_map(corpus, replaceword, 'scientisttoolbox', 'scientist toolbox')
+corpus <- tm_map(corpus, replaceword, '\\s[s]\\s', ' ')
+corpus <- tm_map(corpus, replaceword, '\n+', ' ')
 corpus <- tm_map(corpus, stripWhitespace)
 lapply(corpus[1:5], as.character)
 
@@ -182,13 +167,14 @@ words_freq <- colSums(as.matrix(sparceMatrix))
 orden <- order(words_freq, decreasing = TRUE)
 head(words_freq[orden],10)
 
-# Sentiment inspect of the tweets collected. For this analysis, I will use the original words, without
-# stem.
-require(dplyr)
+####### Lexicon analysis ########
+
+# For this analysis, the original words, without stem, will be used.
 
 tidytext::get_sentiments('nrc')
 tidytext::get_sentiments('bing')
-get_sentiments('afinn')
+tidytext::get_sentiments('afinn')
+
 # Transform the vector of words from words_freq in a tibble.
 tidy_text <- as_tibble(names(words_freq[orden])) %>% rename(word = value)
 
@@ -198,7 +184,7 @@ tidy_text %>% inner_join(tidytext::get_sentiments('nrc')) %>%
   geom_bar(stat = 'identity') +
   xlab('') +
   ylab('') +
-  ggtitle('Sentiment analysis with NRC')
+  ggtitle('Sentiment analysis with NRC lexicon.')
 
 tidy_text %>% inner_join(tidytext::get_sentiments('bing')) %>%
   count(sentiment, sort = TRUE) %>%
@@ -206,7 +192,63 @@ tidy_text %>% inner_join(tidytext::get_sentiments('bing')) %>%
   geom_bar(stat = 'identity', width = 0.3) +
   xlab('') +
   ylab('') +
-  ggtitle('Sentiment analysis with Bing')
+  ggtitle('Sentiment analysis with Bing lexicon.')
 
+tidy_text %>% inner_join(tidytext::get_sentiments('bing')) %>%
+  inner_join(tidytext::get_sentiments('afinn')) %>%
+  group_by(sentiment) %>%
+  summarize(r = sum(value)) %>%
+  ggplot(aes(x = r, y = sentiment, fill = sentiment)) +
+  geom_bar(stat = 'identity', width = 0.7) +
+  xlab('') +
+  ylab('') +
+  ggtitle('Intensity of positive and negative words according to afinn lexicon')
 
+##### Sentiment analysis with 'sentiment' package #####
+
+# Sentiment package can classify emotions (anger, disgust, fear, joy, sadness, surprise) and 
+# polarity (positive, negative, neutral) of documents/sentences. 
+
+sentiment_analysis_naive_bayes <- function(vector_data){
+  library(sentiment)
+  emotions <- classify_emotion(vector_data, algorithm = 'bayes')
   
+  polarity <- classify_polarity(vector_data, algorithm = 'bayes')
+  
+  result_sent_analysis = data.frame(words = vector_data, emotion = emotions[, 'BEST_FIT'], 
+                                    polarity = polarity[,'BEST_FIT'])
+  
+  # Plots
+  g1 <- result_sent_analysis %>% 
+    filter(emotion != 'NA') %>%
+    count(emotion, sort = TRUE) %>%
+    ggplot(aes(x = reorder(emotion, -n), y = n, fill = emotion)) +
+    geom_bar(stat = 'identity') +
+    xlab('') +
+    ylab('') +
+    ggtitle('Emotions identified by Naive Bayes.')
+  print(g1)
+  
+  g2 <- result_sent_analysis %>% 
+    count(polarity, sort = TRUE) %>%
+    ggplot(aes(x = polarity, y = n, fill = polarity)) +
+    geom_bar(stat = 'identity') +
+    xlab('') +
+    ylab('') +
+    ggtitle('Polarity of emotions identified by Naive Bayes.')
+  print(g2)
+}
+
+
+## Analyzing the corpus without stem
+sentiment_analysis_naive_bayes(unlist(lapply(corpus, as.character)))
+
+## Analyzing the corpus with stem
+sentiment_analysis_naive_bayes(unlist(lapply(corpus_stem, as.character)))
+
+## Analyzing the words 
+sentiment_analysis_naive_bayes(tidy_text[['word']])
+
+# The results of 'sentiment' package are in accordance with those obtained using 
+# lexicon dictionaries NRC, bing and afinn. Data science topic is related with a positive
+# sentiment.
